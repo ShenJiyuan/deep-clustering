@@ -27,7 +27,7 @@ def stft(sig, rate):
                               FRAME_SHIFT*rate,
                               winfunc=squared_hann)
     spec = np.fft.rfft(frames, int(FRAME_LENGTH*rate))
-    return np.real(np.log10(spec))  # Log 10 for easier dB calculation
+    return np.log10(np.absolute(spec) + 1e-7)  # Log 10 for easier dB calculation
 
 
 def get_egs(wavlist, min_mix=2, max_mix=3, sil_as_class=True):
@@ -121,22 +121,23 @@ def get_egs(wavlist, min_mix=2, max_mix=3, sil_as_class=True):
 
         # Create mask for zeroing out gradients from silence components
         m = np.max(X) - 40./20  # Minus 40dB
-        M = np.ones(X.shape)
-        M[X < m] = 0
         if sil_as_class:
             z = np.zeros(nc)
             z[-1] = 1
             Y[X < m] = z
+        else:
+            z = np.zeros(nc)
+            Y[X < m] = z
+        X -= np.mean(X)
+        X /= np.std(X) + 1e-12
         i = 0
 
         # Generating sequences
         inp = []
         out = []
-        mask = []
         while i + CONTEXT < len(X):
             inp.append(X[i:i+CONTEXT].reshape((-1,)))
             out.append(Y[i:i+CONTEXT].reshape((-1,)))
-            mask.append(M[i:i+CONTEXT].reshape((-1,)))
             i += CONTEXT // OVERLAP
         yield(np.expand_dims(np.array(inp), axis=0),
               np.expand_dims(np.array(out), axis=0))

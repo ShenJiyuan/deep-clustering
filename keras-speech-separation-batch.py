@@ -11,12 +11,12 @@ from keras.layers import Dropout, Activation, Input, Reshape
 from keras.layers import Dense, LSTM, BatchNormalization
 from keras.layers import TimeDistributed, Bidirectional
 from keras.layers.noise import GaussianNoise
-from keras.optimizers import Adam, SGD
+from keras.optimizers import Adam, SGD, Adagrad
 from keras.models import model_from_json
 from feats import get_egs
 import numpy as np
 
-EMBEDDINGS_DIMENSION = 50
+EMBEDDINGS_DIMENSION = 20
 NUM_CLASSES = 2
 SIL_AS_CLASS = False
 
@@ -115,13 +115,14 @@ def affinitykmeans(Y, V):
     def norm(tensor):
         square_tensor = K.square(tensor)
         tensor_sum = K.sum(square_tensor)
-        frobenius_norm = K.sqrt(tensor_sum)
-        return frobenius_norm
+        return tensor_sum
 
     # V e Y estao vetorizados
     # Antes de mais nada, volto ao formato de matrizes
     V = K.l2_normalize(K.reshape(V, [-1, EMBEDDINGS_DIMENSION]), axis=1)
     Y = K.reshape(Y, [-1, NUM_CLASSES + int(SIL_AS_CLASS)])
+    
+    V = V * K.sum(Y, axis=1, keepdims=True)
 
     T = K.transpose
     dot = K.dot
@@ -140,45 +141,46 @@ def train_nnet(train_list, valid_list):
     inp_shape, out_shape = get_dims(train_gen,
                                     EMBEDDINGS_DIMENSION)
     model = Sequential()
-    model.add(Bidirectional(LSTM(30, return_sequences=True),
+    model.add(Bidirectional(LSTM(300, return_sequences=True),
                             input_shape=inp_shape))
     model.add(TimeDistributed(BatchNormalization(mode=2)))
     model.add(TimeDistributed((GaussianNoise(0.775))))
-#    model.add(TimeDistributed((Dropout(0.5))))
-    model.add(Bidirectional(LSTM(30, return_sequences=True)))
+    #model.add(TimeDistributed((Dropout(0.5))))
+    model.add(Bidirectional(LSTM(300, return_sequences=True)))
     model.add(TimeDistributed(BatchNormalization(mode=2)))
     model.add(TimeDistributed((GaussianNoise(0.775))))
-#    model.add(TimeDistributed((Dropout(0.5))))
+    #model.add(TimeDistributed((Dropout(0.5))))
     model.add(TimeDistributed(Dense(out_shape[-1],
                                     init='uniform',
-                                    activation='relu')))
+                                    activation='tanh')))
 
 #    sgd = SGD(lr=1e-5, momentum=0.9, decay=0.0, nesterov=True)
-    sgd = Adam()
+#    sgd = Adam()
+    sgd = Adagrad()
     model.compile(loss=affinitykmeans, optimizer=sgd)
 
     model.fit_generator(train_gen,
                         validation_data=valid_gen,
-                        nb_val_samples=1,
-                        samples_per_epoch=20, nb_epoch=10, max_q_size=10)
+                        nb_val_samples=10,
+                        samples_per_epoch=100, nb_epoch=10, max_q_size=10)
     # score = model.evaluate(X_test, y_test, batch_size=16)
     save_model(model, "model")
 
 
 def main():
-#    train_nnet('wavlist_short', 'wavlist_short')
+    train_nnet('train_list', 'valid_list')
     loaded_model = load_model("model")
-    x, y = next(get_egs('wavlist_short', 2, 2, SIL_AS_CLASS))
+    x, y = next(get_egs('valid_list', 2, 2, SIL_AS_CLASS))
     v = loaded_model.predict(x)
 
     np.save('x', x)
     np.save('y', y)
     np.save('v', v)
 
-    x = np.load('x.npy')
-    y = np.load('y.npy')
-    v = np.load('v.npy')
-    print_examples(x, y, v)
+    #x = np.load('x.npy')
+    #y = np.load('y.npy')
+    #v = np.load('v.npy')
+    #print_examples(x, y, v)
 
 
 if __name__ == "__main__":
